@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@langchain/core": "^1.1.40",
+    "@langchain/ollama": "^1.2.6"
+  }
+}
