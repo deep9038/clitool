@@ -6,8 +6,8 @@ import ora from 'ora';
 import { config } from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { getProjectContext } from './readProject.js';
-import { HumanMessage,SystemMessage } from '@langchain/core/messages';
+import { BaseMessage, HumanMessage,SystemMessage, ToolMessage } from '@langchain/core/messages';
+import { readProjectTool, writeFileTool } from './tools/index.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 config({ path: join(__dirname, '../.env') });
@@ -17,6 +17,12 @@ const llm = new ChatOpenAI({
     model: 'gpt-4o-mini',
     apiKey: process.env.OPENAI_API_KEY
 });
+
+const llmWithTools = llm.bindTools([readProjectTool,writeFileTool]);
+
+const messages: BaseMessage[] =  [
+    new SystemMessage('You are a helpful assistant for software developers.'),
+]
 
 program
     .name('glitool')
@@ -35,9 +41,9 @@ program
 
 if (process.argv.length === 2){
     
-    const projectContext = getProjectContext(process.cwd());
 
     while(true){
+
         const userInput = await input({message: 'Ask Something: '});
 
         if(userInput.trim() === '/exit'){
@@ -45,14 +51,39 @@ if (process.argv.length === 2){
             process.exit(0);
         }
 
+
+        messages.push(new HumanMessage(userInput));
         const spinner = ora('Thinking...').start();
-        const response = await llm.invoke([
-            new SystemMessage(`You are a helpful assistant for software developers. Here is the context of the current project:\n\n${projectContext}`),
-            new HumanMessage(userInput)
-        ]);
-        spinner.stop();
-        console.log(response.content);
-        console.log(); // empty line between responses
+        while(true){
+            const response = await llmWithTools.invoke(messages);
+            messages.push(response);
+
+            if(response.tool_calls && response.tool_calls.length > 0){
+                for(const toolCall of response.tool_calls){
+                    console.log('Invoking tool:', toolCall.name);
+                    spinner.text = `Running tool: ${toolCall.name}...`;
+                    try{
+
+                        let result;
+
+                        if(toolCall.name === 'readProject') result = await readProjectTool.invoke(toolCall);
+                        if(toolCall.name === 'writeFile') result = await writeFileTool.invoke(toolCall);
+                        messages.push(new ToolMessage({
+                            tool_call_id: toolCall.id ?? '',
+                            content:  typeof result === 'string' ? result : JSON.stringify(result)
+                        }));
+                    } catch (error) {
+                        spinner.stop();
+                        console.error('Tool error:',error);
+                        break
+                    }
+                }
+            }else {
+                spinner.stop();  
+                console.log('\nAssistant:', response.content,'\n');
+                break;
+            }
+        }
     }
 }
 program.parse(); 

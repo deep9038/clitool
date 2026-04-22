@@ -1,5 +1,7 @@
+
+import { tool } from "@langchain/core/tools";   
+import {z}from 'zod';
 import fs from 'fs';
-import { get } from 'http';
 import path from 'path';
 
 const SKIP_DIRS = ['node_modules', '.git', 'dist','build','.next']
@@ -52,10 +54,20 @@ function getFileContents(dir: string):string{
     return result;
 }
 
-export function getProjectContext(dir:string ):string{
-    const structure = getFiles(dir).join('\n');
-    const contents = getFileContents(dir);
-    return `Folder structure:\n${structure}\n\nFile contents:${contents}`;
-}
+
+export const readProjectTool = tool(
+    async () =>{
+        const dir = process.cwd();
+        const structure = getFiles(dir).join('\n');
+        const contents = getFileContents(dir);
+        return `Folder structure:\n${structure}\n\nFile contents:${contents}`;
+    },
+    {
+        name: 'readProject',
+        description: 'Read the current project structure and file contents. Useful for providing context to the assistant.',
+        schema: z.object({})
+    }
+)
+
 
 
